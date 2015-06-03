@@ -5,13 +5,17 @@
   <p id="demo">Click the button to get your coordinates.</p>
   <button onclick="getLocation()">Try It</button>
 
-  <p id="mapholder"></p>
   <p id="zipcodeholder"></p>
+  <p id="moviedataholder"></p>
 
 
   <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&signed_in=true"></script>
+  <script type='text/javascript' src="xml2json.js"></script>
   <script>
     var geocoder;
+    var request = new XMLHttpRequest();
+    var movieDataJSON;
+    var x2js = new X2JS();
 
     var x = document.getElementById("demo");
 
@@ -23,22 +27,60 @@
       }
     }
 
+    function getPostalCode(results){
+      var postalCode;
+      var resultsLen = results.length;
+      for(var i = 0; i < resultsLen; i++)
+      {
+        var componentsLen = results[i].address_components.length;
+        for(var j = 0; j < componentsLen; j++)
+        {
+          var typesLen = results[i].address_components[j].types.length;
+          for(var k = 0; k < typesLen; k++)
+          {
+            if(results[i].address_components[j].types[k] == "postal_code")
+            {
+              postalCode = results[i].address_components[j].short_name;
+              return postalCode;
+            }
+          }
+        }
+      }
+      return postalCode;
+    }
+
+    function getMovieData(postalCode){
+      var url = "http://www.fandango.com/rss/moviesnearme_"+postalCode+".rss";
+      var x = new XMLHttpRequest();
+      x.open("GET","ba-simple-proxy.php?url="+url,true);
+      x.onreadystatechange = function () {
+        if(x.readyState == 4 && x.status == 200)
+        {
+          movieDataJSON = JSON.parse(x.responseText);
+          var jsonObj = x2js.xml_str2json(movieDataJSON.contents);
+          var channelLen = jsonObj.rss.channel.item.length;
+          for(var i = 0; i < channelLen; i++)
+          {
+            document.getElementById("moviedataholder").innerHTML += "<p>"+jsonObj.rss.channel.item[i].title+"</p>";
+            document.getElementById("moviedataholder").innerHTML += jsonObj.rss.channel.item[i].description;
+          }
+        }
+      };
+      x.send(null);
+
+    }
+
     function showPosition(position) {
-      //x.innerHTML = "Latitude: "+position.coords.latitude+
-      //"<br>Longitude: "+position.coords.longitude;
-
-      var latlon = position.coords.latitude + "," + position.coords.longitude;
-      var img_url = "http://maps.googleapis.com/maps/api/staticmap?center=" + latlon + "&zoom=14&size=400x300&sensor=false";
-      document.getElementById("mapholder").innerHTML = "<img src='" + img_url + "'>";
-
       geocoder = new google.maps.Geocoder();
       var latlng = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
       geocoder.geocode({
         'latLng': latlng
       }, function(results, status) {
         if (status == google.maps.GeocoderStatus.OK) {
-          if (results[0].address_components[6]) {
-            document.getElementById("zipcodeholder").innerHTML = "Postal Code: " + results[0].address_components[6].short_name;
+          var zipCode = getPostalCode(results);
+          if (zipCode.length > 0) {
+            document.getElementById("zipcodeholder").innerHTML = "Postal Code: " + zipCode;
+            getMovieData(zipCode);
           } else {
             alert("No results found");
           }
