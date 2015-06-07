@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Showtimes</title>
+  <script src="https://maps.googleapis.com/maps/api/js?v=3.exp"></script>
+  <script type='text/javascript' src="xml2json.js"></script>
+  <script src="https://fb.me/react-0.13.3.min.js"></script>
+  <script src="https://fb.me/JSXTransformer-0.13.3.js"></script>
+  <script src="https://code.jquery.com/jquery-2.1.3.min.js"></script>
+</head>
+<body onload="getZipCode()">
+  <h2>Movie ShowTimes</h2>
+  <div id="content"></div>
+  <p id="errDisplay"></p>
+  <script type="text/jsx">
+    var zipCode;
+    var x = document.getElementById("errDisplay");
+
+    var ZipcodeForm = React.createClass({
+      handleSubmit: function(e)
+      {
+        e.preventDefault();
+        var text = React.findDOMNode(this.refs.text).value.trim();
+        if(!text || text == "Enter ZipCode") {
+          if(React.findDOMNode(this.refs.text).placeholder == this.props.zipcode)
+          {
+            this.props.onZipcodeSubmit({zipcode:this.props.zipcode});
+            return;
+          }
+          React.findDOMNode(this.refs.text).defaultValue = "";
+          React.findDOMNode(this.refs.text).placeholder = "Enter valid ZipCode";
+          return;
+        }
+        this.props.onZipcodeSubmit({zipcode:text});
+        return;
+      },
+      render: function () {
+        return (
+          <form className="zipCodeForm" onSubmit={this.handleSubmit}>
+            <input type="text" placeholder={this.props.zipcode?this.props.zipcode:"Enter ZipCode"} ref="text"/>
+            <input type="submit" value="Search"/>
+          </form>
+        );
+      }
+    });
+
+    var TheaterList = React.createClass({
+      render: function() {
+        function createMarkup(markupText) {
+          return {__html:markupText};
+        };
+        var createTheater = function (theaterObj, index) {
+
+          return <div key={"theater"+index}>
+                  <h3><a href={theaterObj.link}>{theaterObj.title}</a></h3>
+                  <div dangerouslySetInnerHTML={createMarkup(theaterObj.description)} />
+                </div>
+        }
+        if(!this.props.items)
+        {
+          return null;
+        }
+        if($.isArray(this.props.items)){
+          return <ul>{this.props.items.map(createTheater)}</ul>
+        }
+        else
+        {
+            return <ul>{createTheater(this.props.items, 0)}</ul>
+        }
+
+      }
+    });
+
+    var ShowTimeApp = React.createClass({
+      getInitialState: function () {
+        return {theaters: [], zipcode:zipCode};
+      },
+      handleZipcodeSubmit: function (data) {
+        x.innerHTML = "";
+        var newURL = this.props.url.replace("ZIPCODE", data.zipcode);
+        var proxyURL = "ba-simple-proxy.php?url="+newURL;
+        $.ajax({
+          url: proxyURL,
+          dataType: 'json',
+          type: 'GET',
+          success: function(data) {
+            var x2js = new X2JS();
+            var jsonObj = x2js.xml_str2json(data.contents);
+            if(!jsonObj.rss.channel.item)
+            {
+              x.innerHTML = "There are no matching theaters for this search. Please enter a different zip code.";
+            }
+            this.setProps({theaters: jsonObj.rss.channel.item, zipcode:zipCode});
+          }.bind(this),
+          error: function(xhr, status, err) {
+            console.error(proxyURL, status, err.toString());
+          }.bind(this)
+        });
+      },
+      render:function() {
+        return (
+          <div>
+              <ZipcodeForm zipcode={this.props.zipcode} onZipcodeSubmit={this.handleZipcodeSubmit}/>
+              <TheaterList items={this.props.theaters}/>
+          </div>
+        );
+      }
+    });
+
+    function getZipCode()
+    {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(convertToZipCode, showError);
+      } else {
+        zipCode = "Please enter zipCode";
+        loadShowtimeApp(zipCode);
+      }
+    }
+
+    function convertToZipCode(position)
+    {
+      var geocoder;
+      geocoder = new google.maps.Geocoder();
+      var latlng = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+      geocoder.geocode({
+        'latLng': latlng
+      }, function(results, status) {
+        if (status == google.maps.GeocoderStatus.OK) {
+          zipCode = getPostalCode(results);
+          console.log("zipCode is: "+zipCode);
+          if (zipCode.length == 0) {
+            console.error("No results found");
+          }
+        } else {
+        console.error("Geocoder failed due to: " + status);
+        }
+        loadShowtimeApp(zipCode);
+      });
+    }
+
+    function getPostalCode(results){
+      var postalCode;
+      var resultsLen = results.length;
+      for(var i = 0; i < resultsLen; i++)
+      {
+        var componentsLen = results[i].address_components.length;
+        for(var j = 0; j < componentsLen; j++)
+        {
+          var typesLen = results[i].address_components[j].types.length;
+          for(var k = 0; k < typesLen; k++)
+          {
+            if(results[i].address_components[j].types[k] == "postal_code")
+            {
+              postalCode = results[i].address_components[j].short_name;
+              return postalCode;
+            }
+          }
+        }
+      }
+      return postalCode;
+    }
+
+    function showError(error) {
+      switch (error.code) {
+        case error.PERMISSION_DENIED:
+          x.innerHTML = "User denied the request for Geolocation.";
+          break;
+        case error.POSITION_UNAVAILABLE:
+          x.innerHTML = "Location information is unavailable.";
+          break;
+        case error.TIMEOUT:
+          x.innerHTML = "The request to get user location timed out."
+          break;
+        case error.UNKNOWN_ERROR:
+          x.innerHTML = "An unknown error occurred.";
+          break;
+      }
+    }
+
+    function loadShowtimeApp(zipCode)
+    {
+      React.render(
+        <ShowTimeApp zipcode={zipCode} url="http://www.fandango.com/rss/moviesnearme_ZIPCODE.rss" />,
+        document.getElementById('content')
+      );
+    }
+
+    loadShowtimeApp(zipCode);
+  </script>
+</body>
+</html
