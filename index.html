@@ -17,14 +17,16 @@
     var x = document.getElementById("errDisplay");
 
     var ZipcodeForm = React.createClass({
-      getInitialState : function () {
-        return {zipcode:this.props.zipcode};
-      },
       handleSubmit: function(e)
       {
         e.preventDefault();
         var text = React.findDOMNode(this.refs.text).value.trim();
         if(!text || text == "Enter ZipCode") {
+          if(React.findDOMNode(this.refs.text).placeholder == this.props.zipcode)
+          {
+            this.props.onZipcodeSubmit({zipcode:this.props.zipcode});
+            return;
+          }
           React.findDOMNode(this.refs.text).defaultValue = "";
           React.findDOMNode(this.refs.text).placeholder = "Enter valid ZipCode";
           return;
@@ -35,7 +37,7 @@
       render: function () {
         return (
           <form className="zipCodeForm" onSubmit={this.handleSubmit}>
-            <input type="text" placeholder="Enter ZipCode" defaultValue={this.state.zipcode?this.state.zipcode:zipCode} ref="text"/>
+            <input type="text" placeholder={this.props.zipcode?this.props.zipcode:"Enter ZipCode"} ref="text"/>
             <input type="submit" value="Search"/>
           </form>
         );
@@ -56,7 +58,7 @@
         }
         if(!this.props.items)
         {
-          return <div><p>There are no matching theaters for this search. Please enter a different zip code.</p></div>
+          return null;
         }
         if($.isArray(this.props.items)){
           return <ul>{this.props.items.map(createTheater)}</ul>
@@ -74,6 +76,7 @@
         return {theaters: [], zipcode:zipCode};
       },
       handleZipcodeSubmit: function (data) {
+        x.innerHTML = "";
         var newURL = this.props.url.replace("ZIPCODE", data.zipcode);
         var proxyURL = "ba-simple-proxy.php?url="+newURL;
         $.ajax({
@@ -83,7 +86,11 @@
           success: function(data) {
             var x2js = new X2JS();
             var jsonObj = x2js.xml_str2json(data.contents);
-            this.setState({theaters: jsonObj.rss.channel.item, zipcode:zipCode});
+            if(!jsonObj.rss.channel.item)
+            {
+              x.innerHTML = "There are no matching theaters for this search. Please enter a different zip code.";
+            }
+            this.setProps({theaters: jsonObj.rss.channel.item, zipcode:zipCode});
           }.bind(this),
           error: function(xhr, status, err) {
             console.error(proxyURL, status, err.toString());
@@ -93,8 +100,8 @@
       render:function() {
         return (
           <div>
-              <ZipcodeForm zipcode={this.state.zipcode} onZipcodeSubmit={this.handleZipcodeSubmit}/>
-              <TheaterList items={this.state.theaters}/>
+              <ZipcodeForm zipcode={this.props.zipcode} onZipcodeSubmit={this.handleZipcodeSubmit}/>
+              <TheaterList items={this.props.theaters}/>
           </div>
         );
       }
@@ -106,7 +113,7 @@
         navigator.geolocation.getCurrentPosition(convertToZipCode, showError);
       } else {
         zipCode = "Please enter zipCode";
-        loadShowtimeApp();
+        loadShowtimeApp(zipCode);
       }
     }
 
@@ -120,13 +127,14 @@
       }, function(results, status) {
         if (status == google.maps.GeocoderStatus.OK) {
           zipCode = getPostalCode(results);
+          console.log("zipCode is: "+zipCode);
           if (zipCode.length == 0) {
             console.error("No results found");
           }
         } else {
         console.error("Geocoder failed due to: " + status);
         }
-        loadShowtimeApp();
+        loadShowtimeApp(zipCode);
       });
     }
 
@@ -169,13 +177,15 @@
       }
     }
 
-    function loadShowtimeApp(){
+    function loadShowtimeApp(zipCode)
+    {
       React.render(
-        <ShowTimeApp zipcode={zipCode}url="http://www.fandango.com/rss/moviesnearme_ZIPCODE.rss" />,
+        <ShowTimeApp zipcode={zipCode} url="http://www.fandango.com/rss/moviesnearme_ZIPCODE.rss" />,
         document.getElementById('content')
       );
     }
 
+    loadShowtimeApp(zipCode);
   </script>
 </body>
 </html
